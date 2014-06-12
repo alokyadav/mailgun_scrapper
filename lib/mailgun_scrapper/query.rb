@@ -5,24 +5,29 @@ require 'json'
 module MailgunScrapper
   class Query
     NUM_OF_RETRY = 3
-    HOST_BASE_URI = "api.mailgun.net"
     RETRY_ALLOWED_RESPONSES = [402, 500, 502, 503, 504]
-    API_KEY = "key-0sd0tvg7emzfhdr657yj60d42xr7utu0"
-    DOMAIN = "mg.dummy.com"
-    INITIAL_URI_PATH = "/v2/#{DOMAIN}/events"
-    DEFAULT_BEGIN_TIME = (Time.now - 5 * 24 * 60 * 60).rfc2822
-    DEFAULT_END_TIME = Time.now.rfc2822
+    # HOST_BASE_URI = "api.mailgun.net"
+    # API_KEY = "key-0sd0tvg7emzfhdr657yj60d42xr7utu0"
+    # DOMAIN = "mg.dummy.com"
+    # INITIAL_URI_PATH = "/v2/#{DOMAIN}/events"
+
+    #Time interval for collecting logs
+    #logs for events occurring between DEFAULT_BEGIN_TIME and DEFAULT_END_TIME are collected if there is no specified interval in options
+    DEFAULT_BEGIN_TIME = (Time.now.utc - 5 * 24 * 60 * 60).rfc2822
+    DEFAULT_END_TIME = Time.now.utc.rfc2822
 
     attr_accessor :logs
-    def initialize(options = {})
-      @params = build_params(options)
+    def initialize(options = {}, api_key, api_version, api_host, domain)
+      @initial_uri_path = "/#{api_version}/#{domain}/events"
+      @api_key = api_key
+      @api_host = api_host
       @logs = []
-      get_logs
+      populate_logs(build_params(options))
     end
 
-    def get_logs
-      unless @params.empty?
-        log_hash = get_log_page(log_page_uri(INITIAL_URI_PATH), :params => @params)
+    def populate_logs(params = {})
+      unless params.empty?
+        log_hash = get_log_page(log_page_uri(@initial_uri_path), :params => params)
         until log_hash["items"].empty?
           @logs.concat(log_hash["items"])
           log_hash = get_log_page(log_page_uri(URI(log_hash["paging"]["next"]).path))
@@ -48,22 +53,18 @@ module MailgunScrapper
       end
 
       def log_page_uri(path)
-        "https://api:#{API_KEY}@#{HOST_BASE_URI}#{path}"
+        "https://api:#{@api_key}@#{@api_host}#{path}"
       end
 
       def build_params(options = {})
         query_params = {}
-        tags = options[:tags] || []
-        events = options[:event] || []
-        unless tags.empty?
-          query_params[:tags] = tags.join(" OR ")
+        query_params.merge!(options)
+        unless query_params[:tags].nil?
+          query_params[:tags] = query_params[:tags].join(" OR ")
         end
-        unless events.empty?
-          query_params[:event] = events.join(" OR ")
+        unless query_params[:event].nil?
+          query_params[:event] = query_params[:event].join(" OR ")
         end
-        query_params[:begin] = options[:begin] || DEFAULT_BEGIN_TIME
-        query_params[:end] = options[:end]|| DEFAULT_END_TIME
-        query_params[:pretty] = 'yes'
         query_params
       end
 
